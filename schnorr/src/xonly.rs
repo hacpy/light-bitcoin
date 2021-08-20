@@ -16,7 +16,7 @@ use secp256k1::{
 };
 
 use crate::{error::Error, schnorrsig, signature::Signature, taggedhash::HashInto};
-
+use light_bitcoin_primitives::H256;
 /// An [`XOnly`] is the compressed representation of a [`PublicKey`] which
 /// only stores the x-coordinate of the point.
 ///
@@ -33,6 +33,12 @@ impl XOnly {
     pub fn verify(self, sig: &Signature, msg: &Message) -> Result<bool, Error> {
         let pubkey = self.try_into()?;
         schnorrsig::verify(sig, msg, pubkey)
+    }
+
+    pub fn verify_H256(self, sig: &Signature, h256: &H256) -> Result<bool, Error> {
+        let pubkey = self.try_into()?;
+        let msg = Message::parse(&h256.0);
+        schnorrsig::verify(sig, &msg, pubkey)
     }
 
     pub fn on_curve(&self) -> Result<bool, Error> {

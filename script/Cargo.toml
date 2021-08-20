@@ -15,6 +15,7 @@ std = [
   "light-bitcoin-keys/std",
   "light-bitcoin-primitives/std",
   "light-bitcoin-serialization/std",
+  "light-bitcoin-schnorr/std",
 ]
 
 [dependencies]
@@ -25,3 +26,4 @@ light-bitcoin-crypto = { path = "../crypto", default-features = false }
 light-bitcoin-keys = { path = "../keys", default-features = false }
 light-bitcoin-primitives = { path = "../primitives", default-features = false }
 light-bitcoin-serialization = { path = "../serialization", default-features = false }
+light-bitcoin-schnorr = { path = "../schnorr", default-features = false }

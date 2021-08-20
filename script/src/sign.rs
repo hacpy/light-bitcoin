@@ -10,21 +10,29 @@ use light_bitcoin_primitives::{Bytes, H256};
 use light_bitcoin_serialization::Stream;
 
 use crate::builder::Builder;
+use crate::interpreter::ScriptExecutionData;
 use crate::script::Script;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SignatureVersion {
     Base,
     WitnessV0,
+    // Witness v1 with 32-byte program, not BIP16 P2SH-wrapped, key path spending; see BIP 341
+    Taproot,
+    // Witness v1 with 32-byte program, not BIP16 P2SH-wrapped, script path spending, leaf version 0xc0; see BIP 342
+    TapScript,
     ForkId,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum SighashBase {
+    // Taproot only; implied when sighash byte is missing, and equivalent to SIGHASH_ALL
+    Default = 0,
     All = 1,
     None = 2,
     Single = 3,
+    Mask = 0x80,
 }
 
 impl From<SighashBase> for u32 {
@@ -154,6 +162,8 @@ impl TransactionInputSigner {
                 sighashtype,
                 sighash,
             ),
+            // TODO: Impl sighash with taproot and tapscript
+            _ => todo!(),
         }
     }
 
@@ -257,6 +267,8 @@ impl TransactionInputSigner {
                 })
                 .collect(),
             SighashBase::None => Vec::new(),
+            SighashBase::Default => todo!(),
+            SighashBase::Mask => todo!(),
         };
 
         let tx = Transaction {
@@ -296,6 +308,98 @@ impl TransactionInputSigner {
         stream.append(&hash_outputs);
         stream.append(&self.lock_time);
         stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
+        let out = stream.out();
+        dhash256(&out)
+    }
+
+    fn signature_hash_schnorr(
+        &self,
+        sigversion: SignatureVersion,
+        sighash: Sighash,
+        input_index: usize,
+        execdata: ScriptExecutionData,
+        in_pos: u32,
+    ) -> H256 {
+        let key_version = 0u8;
+        let ext_flag = if sigversion == SignatureVersion::Taproot {
+            0u8
+        } else {
+            1u8
+        };
+
+        let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
+        let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
+        let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
+        let hash_amounts = compute_hash_amounts(&self.outputs);
+        let hash_scripts = compute_hash_scripts(&self.outputs);
+
+        let mut stream = Stream::default();
+        stream.append(&"TapSigHash");
+        stream.append(&"TapSigHash");
+        // Epoch
+        stream.append(&1);
+        // Hash type
+        let hash_type: u8 = match sighash.base {
+            SighashBase::Default => 0x00,
+            SighashBase::All => 0x01,
+            SighashBase::None => 0x02,
+            SighashBase::Single => 0x03,
+            SighashBase::Mask => 0x80,
+        };
+        let output_type = if hash_type == 0 { 1u8 } else { hash_type & 3 };
+        let input_type = hash_type & 128;
+
+        stream.append(&hash_type);
+        // Transaction level data
+        stream.append(&self.version);
+        stream.append(&self.lock_time);
+        if input_type != 128 {
+            stream.append(&hash_prevouts);
+            stream.append(&hash_amounts);
+            stream.append(&hash_scripts);
+            stream.append(&hash_sequence);
+        }
+        if output_type == 1 {
+            stream.append(&hash_outputs);
+        }
+
+        let have_annex = if execdata.m_annex_present { 1u8 } else { 0u8 };
+        let spend_type = ext_flag << 1 + have_annex;
+        stream.append(&spend_type);
+        // L1489-1495
+        if input_type == 128 {
+            stream.append(&self.inputs[input_index].previous_output);
+            stream.append(&hash_outputs[input_index]);
+            stream.append(&self.inputs[input_index].sequence);
+        } else {
+            stream.append(&in_pos);
+        }
+
+        if execdata.m_annex_present {
+            stream.append(&execdata.m_annex_hash);
+        }
+
+        // Data about the output (if only one).
+        // L1500-1506
+        // TODO: Check out_type
+        if output_type == 3 {
+            // in_pos >= tx_to.vout.size() return false
+            let mut single_output = Stream::default();
+            single_output.append(&self.outputs[input_index]);
+            let output = single_output.out();
+            stream.append(&dhash256(&output));
+        }
+
+        // Additional data for BIP 342 signatures
+        if sigversion == SignatureVersion::TapScript {
+            if execdata.m_tapleaf_hash_init {
+                stream.append(&execdata.m_tapleaf_hash);
+                stream.append(&key_version);
+            }
+            if execdata.m_codeseparator_pos_init {
+                stream.append(&execdata.m_codeseparator_pos);
+            }
+        }
         let out = stream.out();
         dhash256(&out)
     }
@@ -375,6 +479,22 @@ fn compute_hash_outputs(
         }
         _ => H256::zero(),
     }
+}
+
+fn compute_hash_amounts(outputs: &[TransactionOutput]) -> H256 {
+    let mut stream = Stream::default();
+    for output in outputs {
+        stream.append(&output.value);
+    }
+    dhash256(&stream.out())
+}
+
+fn compute_hash_scripts(outputs: &[TransactionOutput]) -> H256 {
+    let mut stream = Stream::default();
+    for output in outputs {
+        stream.append(&output.script_pubkey);
+    }
+    dhash256(&stream.out())
 }
 
 #[cfg(test)]

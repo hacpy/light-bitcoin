@@ -3,6 +3,8 @@ use light_bitcoin_chain::constants::{
     SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use light_bitcoin_keys::{Message, Public, Signature};
+use light_bitcoin_schnorr::signature::Signature as SchnorrSignature;
+use light_bitcoin_schnorr::xonly::XOnly;
 
 use crate::num::Num;
 use crate::script::Script;
@@ -11,6 +13,15 @@ use crate::sign::{SignatureVersion, TransactionInputSigner};
 /// Checks transaction signature
 pub trait SignatureChecker {
     fn verify_signature(&self, signature: &Signature, public: &Public, hash: &Message) -> bool;
+
+    fn verify_schnorr_signature(
+        &self,
+        signature: &SchnorrSignature,
+        public: &XOnly,
+        hash: &Message,
+    ) -> bool;
+
+    // TODO: add check schnorr signature
 
     fn check_signature(
         &self,
@@ -31,6 +42,15 @@ pub struct NoopSignatureChecker;
 impl SignatureChecker for NoopSignatureChecker {
     fn verify_signature(&self, signature: &Signature, public: &Public, hash: &Message) -> bool {
         public.verify(hash, signature).unwrap_or(false)
+    }
+
+    fn verify_schnorr_signature(
+        &self,
+        signature: &SchnorrSignature,
+        public: &XOnly,
+        hash: &Message,
+    ) -> bool {
+        public.verify_H256(signature, hash).unwrap_or(false)
     }
 
     fn check_signature(
@@ -63,6 +83,15 @@ pub struct TransactionSignatureChecker {
 impl SignatureChecker for TransactionSignatureChecker {
     fn verify_signature(&self, signature: &Signature, public: &Public, hash: &Message) -> bool {
         public.verify(hash, signature).unwrap_or(false)
+    }
+
+    fn verify_schnorr_signature(
+        &self,
+        signature: &SchnorrSignature,
+        public: &XOnly,
+        hash: &Message,
+    ) -> bool {
+        public.verify_H256(signature, hash).unwrap_or(false)
     }
 
     fn check_signature(
