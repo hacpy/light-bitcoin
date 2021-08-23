@@ -312,12 +312,11 @@ impl TransactionInputSigner {
         dhash256(&out)
     }
 
-    fn signature_hash_schnorr(
+    pub fn signature_hash_schnorr(
         &self,
         sigversion: SignatureVersion,
         sighash: Sighash,
-        input_index: usize,
-        execdata: ScriptExecutionData,
+        execdata: &ScriptExecutionData,
         in_pos: u32,
     ) -> H256 {
         let key_version = 0u8;
@@ -329,7 +328,7 @@ impl TransactionInputSigner {
 
         let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
         let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
-        let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
+        let hash_outputs = compute_hash_outputs(sighash, in_pos as usize, &self.outputs);
         let hash_amounts = compute_hash_amounts(&self.outputs);
         let hash_scripts = compute_hash_scripts(&self.outputs);
 
@@ -368,9 +367,9 @@ impl TransactionInputSigner {
         stream.append(&spend_type);
         // L1489-1495
         if input_type == 128 {
-            stream.append(&self.inputs[input_index].previous_output);
-            stream.append(&hash_outputs[input_index]);
-            stream.append(&self.inputs[input_index].sequence);
+            stream.append(&self.inputs[in_pos as usize].previous_output);
+            stream.append(&hash_outputs[in_pos as usize]);
+            stream.append(&self.inputs[in_pos as usize].sequence);
         } else {
             stream.append(&in_pos);
         }
@@ -381,11 +380,10 @@ impl TransactionInputSigner {
 
         // Data about the output (if only one).
         // L1500-1506
-        // TODO: Check out_type
         if output_type == 3 {
             // in_pos >= tx_to.vout.size() return false
             let mut single_output = Stream::default();
-            single_output.append(&self.outputs[input_index]);
+            single_output.append(&self.outputs[in_pos as usize]);
             let output = single_output.out();
             stream.append(&dhash256(&output));
         }

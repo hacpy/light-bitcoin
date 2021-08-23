@@ -6,9 +6,10 @@ use light_bitcoin_keys::{Message, Public, Signature};
 use light_bitcoin_schnorr::signature::Signature as SchnorrSignature;
 use light_bitcoin_schnorr::xonly::XOnly;
 
+use crate::interpreter::ScriptExecutionData;
 use crate::num::Num;
 use crate::script::Script;
-use crate::sign::{SignatureVersion, TransactionInputSigner};
+use crate::sign::{Sighash, SignatureVersion, TransactionInputSigner};
 
 /// Checks transaction signature
 pub trait SignatureChecker {
@@ -21,7 +22,14 @@ pub trait SignatureChecker {
         hash: &Message,
     ) -> bool;
 
-    // TODO: add check schnorr signature
+    fn check_schnorr_signature(
+        &self,
+        signature: &SchnorrSignature,
+        public: &XOnly,
+        execdata: &ScriptExecutionData,
+        sighashtype: u32,
+        version: SignatureVersion,
+    ) -> bool;
 
     fn check_signature(
         &self,
@@ -51,6 +59,17 @@ impl SignatureChecker for NoopSignatureChecker {
         hash: &Message,
     ) -> bool {
         public.verify_H256(signature, hash).unwrap_or(false)
+    }
+
+    fn check_schnorr_signature(
+        &self,
+        _: &SchnorrSignature,
+        _: &XOnly,
+        _: &ScriptExecutionData,
+        _: u32,
+        _: SignatureVersion,
+    ) -> bool {
+        false
     }
 
     fn check_signature(
@@ -92,6 +111,22 @@ impl SignatureChecker for TransactionSignatureChecker {
         hash: &Message,
     ) -> bool {
         public.verify_H256(signature, hash).unwrap_or(false)
+    }
+
+    fn check_schnorr_signature(
+        &self,
+        signature: &SchnorrSignature,
+        public: &XOnly,
+        execdata: &ScriptExecutionData,
+        sighashtype: u32,
+        version: SignatureVersion,
+    ) -> bool {
+        let sighash = Sighash::from_u32(version, sighashtype);
+
+        let hash =
+            self.signer
+                .signature_hash_schnorr(version, sighash, execdata, self.input_index as u32);
+        self.verify_schnorr_signature(signature, public, &hash)
     }
 
     fn check_signature(

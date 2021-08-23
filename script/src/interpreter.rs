@@ -562,9 +562,63 @@ fn verify_witnessv1_program(
 ) -> Result<bool, Error> {
     let witness_stack = witness;
     let witness_stack_len = witness_stack.len();
+    let mut execdata = ScriptExecutionData::default();
+
+    if witness_version == 0 {
+        // BIP141 P2WSH: 32-byte witness v0 program (which encodes SHA256(script))
+        if witness_program.len() == 32 {
+            if witness_stack_len == 0 {
+                return Err(Error::WitnessProgramWitnessEmpty);
+            }
+
+            let script_pubkey = &witness_stack[witness_stack_len - 1];
+            let stack = &witness_stack[0..witness_stack_len - 1];
+            let exec_script = sha256(script_pubkey);
+
+            if exec_script.as_bytes() != &witness_program[0..32] {
+                return Err(Error::WitnessProgramMismatch);
+            }
+
+            let (mut stack, script_pubkey): (Stack<_>, Script) = (
+                stack.iter().cloned().collect::<Vec<_>>().into(),
+                Script::new(script_pubkey.clone()),
+            );
+            execute_witness_script(
+                &mut stack,
+                &script_pubkey,
+                flags,
+                checker,
+                SignatureVersion::WitnessV0,
+            )
+        }
+        // BIP141 P2WPKH: 20-byte witness v0 program (which encodes Hash160(pubkey))
+        else if witness_program.len() == 20 {
+            if witness_stack_len != 2 {
+                return Err(Error::WitnessProgramMismatch);
+            }
+
+            let exec_script = Builder::default()
+                .push_opcode(Opcode::OP_DUP)
+                .push_opcode(Opcode::OP_HASH160)
+                .push_data(witness_program)
+                .push_opcode(Opcode::OP_EQUALVERIFY)
+                .push_opcode(Opcode::OP_CHECKSIG)
+                .into_script();
+            let mut stack = witness_stack.clone().into();
+            execute_witness_script(
+                &mut stack,
+                &exec_script,
+                flags,
+                checker,
+                SignatureVersion::WitnessV0,
+            )
+        } else {
+            Err(Error::WitnessProgramWrongLength)
+        }
+    }
     // Make sure the version is witnessv1 and 32 bytes long and that it is not p2sh
     // BIP341 Taproot: 32-byte non-P2SH witness v1 program (which encodes a P2C-tweaked pubkey)
-    if witness_version == 1 && witness_program.len() == 32 && !flags.verify_p2sh {
+    else if witness_version == 1 && witness_program.len() == 32 && !flags.verify_p2sh {
         if witness_stack_len == 0 {
             return Err(Error::WitnessProgramWitnessEmpty);
         }
@@ -581,6 +635,7 @@ fn verify_witnessv1_program(
         if witness_stack_len == 1 {
             // Key path spending (stack size is 1 after removing optional annex)
             // TODO: Check Schnorr Signature
+            Ok(true)
         } else {
             // Script path spending (stack size is >1 after removing optional annex)
             let control = stack.last().unwrap();
@@ -590,9 +645,14 @@ fn verify_witnessv1_program(
                 // taproot control size wrong
                 return Err(Error::WitnessProgramWrongLength);
             }
+            Ok(true)
         }
+    } else {
+        if flags.verify_discourage_upgradable_witness_program {
+            return Err(Error::DiscourageUpgradableWitnessProgram);
+        }
+        Ok(true)
     }
-    Ok(false)
 }
 
 /// Evaluautes the script
