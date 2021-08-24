@@ -3,8 +3,6 @@ use light_bitcoin_chain::constants::{
     SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use light_bitcoin_keys::{Message, Public, Signature};
-use light_bitcoin_schnorr::signature::Signature as SchnorrSignature;
-use light_bitcoin_schnorr::xonly::XOnly;
 
 use crate::interpreter::ScriptExecutionData;
 use crate::num::Num;
@@ -17,15 +15,15 @@ pub trait SignatureChecker {
 
     fn verify_schnorr_signature(
         &self,
-        signature: &SchnorrSignature,
-        public: &XOnly,
+        signature: &Signature,
+        public: &Public,
         hash: &Message,
     ) -> bool;
 
     fn check_schnorr_signature(
         &self,
-        signature: &SchnorrSignature,
-        public: &XOnly,
+        signature: &Signature,
+        public: &Public,
         execdata: &ScriptExecutionData,
         sighashtype: u32,
         version: SignatureVersion,
@@ -54,17 +52,17 @@ impl SignatureChecker for NoopSignatureChecker {
 
     fn verify_schnorr_signature(
         &self,
-        signature: &SchnorrSignature,
-        public: &XOnly,
+        signature: &Signature,
+        public: &Public,
         hash: &Message,
     ) -> bool {
-        public.verify_H256(signature, hash).unwrap_or(false)
+        public.verify_schnorr(hash, signature).unwrap_or(false)
     }
 
     fn check_schnorr_signature(
         &self,
-        _: &SchnorrSignature,
-        _: &XOnly,
+        _: &Signature,
+        _: &Public,
         _: &ScriptExecutionData,
         _: u32,
         _: SignatureVersion,
@@ -106,17 +104,17 @@ impl SignatureChecker for TransactionSignatureChecker {
 
     fn verify_schnorr_signature(
         &self,
-        signature: &SchnorrSignature,
-        public: &XOnly,
+        signature: &Signature,
+        public: &Public,
         hash: &Message,
     ) -> bool {
-        public.verify_H256(signature, hash).unwrap_or(false)
+        public.verify_schnorr(hash, signature).unwrap_or(false)
     }
 
     fn check_schnorr_signature(
         &self,
-        signature: &SchnorrSignature,
-        public: &XOnly,
+        signature: &Signature,
+        public: &Public,
         execdata: &ScriptExecutionData,
         sighashtype: u32,
         version: SignatureVersion,

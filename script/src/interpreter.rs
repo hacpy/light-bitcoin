@@ -69,6 +69,26 @@ fn check_signature(
     }
 }
 
+/// Check schnorr signature
+fn check_schnorr_signature(
+    checker: &dyn SignatureChecker,
+    script_sig: &Vec<u8>,
+    public: &Vec<u8>,
+    version: SignatureVersion,
+    execdata: &ScriptExecutionData,
+) -> bool {
+    let public = match Public::from_slice(&public) {
+        Ok(public) => public,
+        _ => return false,
+    };
+
+    if let Some((hash_type, sig)) = script_sig.split_last() {
+        checker.check_schnorr_signature(&sig.into(), &public, execdata, *hash_type as u32, version)
+    } else {
+        return false;
+    }
+}
+
 /// Helper function.
 fn verify_signature(
     checker: &dyn SignatureChecker,
@@ -623,21 +643,25 @@ fn verify_witnessv1_program(
             return Err(Error::WitnessProgramWitnessEmpty);
         }
         // Drop annex (this is non-standard; see IsWitnessStandard)
-        let stack = if witness_stack_len >= 2
+        let mut stack: Stack<Bytes> = witness_stack.clone().into();
+        if witness_stack_len >= 2
             && witness_stack.last().is_some()
             && witness_program.last() == Some(&ANNEX_TAG)
         {
-            &witness_stack[0..witness_stack_len - 1]
-        } else {
-            &witness_stack[..]
+            stack.pop()?;
         };
 
         if witness_stack_len == 1 {
             // Key path spending (stack size is 1 after removing optional annex)
-            // TODO: Check Schnorr Signature
-            // let sig = stack.first();
-            // checker.check_schnorr_signature(signature, public, execdata, sighashtype, SignatureVersion::Taproot);
-            Ok(true)
+            let pubkey = stack.pop()?;
+            let signature = stack.pop()?;
+            Ok(check_schnorr_signature(
+                checker,
+                &signature,
+                &pubkey,
+                SignatureVersion::Taproot,
+                &execdata,
+            ))
         } else {
             // Script path spending (stack size is >1 after removing optional annex)
             let control = stack.last().unwrap();
