@@ -48,7 +48,7 @@ impl Private {
         let (signature, _recovery_id) = secp256k1::sign(&message, &secret);
         Ok(signature.serialize_der().as_ref().to_vec().into())
     }
-
+    
     pub fn sign_compact(&self, message: &Message) -> Result<CompactSignature, Error> {
         let secret = secp256k1::SecretKey::parse(self.secret.as_fixed_bytes())?;
         let message = secp256k1::Message::parse(message.as_fixed_bytes());

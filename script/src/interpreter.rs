@@ -635,6 +635,8 @@ fn verify_witnessv1_program(
         if witness_stack_len == 1 {
             // Key path spending (stack size is 1 after removing optional annex)
             // TODO: Check Schnorr Signature
+            // let sig = stack.first();
+            // checker.check_schnorr_signature(signature, public, execdata, sighashtype, SignatureVersion::Taproot);
             Ok(true)
         } else {
             // Script path spending (stack size is >1 after removing optional annex)

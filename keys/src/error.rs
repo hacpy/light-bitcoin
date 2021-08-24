@@ -43,3 +43,11 @@ impl From<secp256k1::Error> for Error {
         }
     }
 }
+
+impl From<light_bitcoin_schnorr::error::Error> for Error {
+    fn from(e: light_bitcoin_schnorr::error::Error) -> Self {
+        match e {
+            _ => Error::InvalidSignature,
+        }
+    }
+}

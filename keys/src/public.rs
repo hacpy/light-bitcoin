@@ -1,7 +1,10 @@
+use core::convert::TryFrom;
 use core::{fmt, ops};
 
 use light_bitcoin_crypto::dhash160;
 use light_bitcoin_primitives::{H264, H512, H520};
+use light_bitcoin_schnorr::schnorrsig;
+use light_bitcoin_schnorr::signature::Signature as SchnorrSignature;
 
 use codec::{Decode, Encode};
 #[cfg(feature = "std")]
@@ -82,6 +85,21 @@ impl Public {
         signature.normalize_s();
         let message = secp256k1::Message::parse(message.as_fixed_bytes());
         Ok(secp256k1::verify(&message, &signature, &public))
+    }
+
+    pub fn verify_schnorr(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
+        let mut s_bytes = [0u8; 64];
+        s_bytes.copy_from_slice(signature);
+        let sig = SchnorrSignature::try_from(s_bytes)?;
+        let public = match self {
+            Public::Normal(pubkey) => secp256k1::PublicKey::parse(pubkey.as_fixed_bytes())?,
+            Public::Compressed(pubkey) => {
+                secp256k1::PublicKey::parse_compressed(pubkey.as_fixed_bytes())?
+            }
+        };
+        let msg = secp256k1::Message::parse(&message.0);
+        schnorrsig::verify(&sig, &msg, public)?;
+        Ok(true)
     }
 
     pub fn verify_compact(&self, message: &Message, signature: &[u8; 64]) -> Result<bool, Error> {
