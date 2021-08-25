@@ -2,9 +2,12 @@
 use alloc::{vec, vec::Vec};
 use light_bitcoin_chain::H256;
 use light_bitcoin_keys::{Message, Public, Signature};
+use light_bitcoin_serialization::Stream;
 
 use core::{cmp, mem};
 use light_bitcoin_primitives::Bytes;
+use std::cmp::Ordering;
+use std::str::FromStr;
 
 use crate::script::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STACK_SIZE};
 use crate::sign::{Sighash, SignatureVersion};
@@ -446,6 +449,7 @@ fn execute_witness_script(
     flags: &VerificationFlags,
     checker: &dyn SignatureChecker,
     version: SignatureVersion,
+    execdata: &ScriptExecutionData,
 ) -> Result<bool, Error> {
     if version == SignatureVersion::TapScript {
         // OP_SUCCESSx processing overrides everything, including stack element size limits
@@ -474,7 +478,7 @@ fn execute_witness_script(
     }
 
     // Run the script interpreter.
-    if !eval_script(stack, &script, flags, checker, version)? {
+    if !eval_schnorr_script(stack, &script, flags, checker, version, execdata)? {
         return Ok(false);
     }
 
@@ -572,6 +576,52 @@ fn verify_witness_program(
     Ok(success)
 }
 
+fn compute_tapleaf_hash(leaf_version: u8, script: &Bytes) -> H256 {
+    let mut stream = Stream::default();
+    stream.append(&"TapLeaf");
+    stream.append(&"TapLeaf");
+    stream.append(&leaf_version);
+    stream.append(script);
+    let out = stream.out();
+    dhash256(&out)
+}
+
+fn compute_taproot_merkle_Root(control: Bytes, tapleaf_hash: H256) -> H256 {
+    let path_len = (control.len() - 33) / 32;
+
+    let mut k = tapleaf_hash;
+    for i in 0..path_len {
+        let mut node = Bytes::new();
+
+        let mut branch = Stream::default();
+        branch.append(&"TapBranch");
+        branch.append(&"TapBranch");
+
+        let control_data = control
+            .clone()
+            .take()
+            .iter()
+            .fold(0, |x, &i| x << 4 | i as u64);
+        let begin: Vec<u8> = (control_data + 33 + 32 * i as u64)
+            .to_be_bytes()
+            .iter()
+            .copied()
+            .collect();
+        let end: Vec<u8> = 32u64.to_be_bytes().iter().copied().collect();
+        node.append(&mut Bytes::from(begin));
+        node.append(&mut Bytes::from(end));
+        if node.cmp(&Bytes::from(k.as_bytes())) == Ordering::Less {
+            branch.append(&k);
+            branch.append(&node);
+        } else {
+            branch.append(&node);
+            branch.append(&k);
+        }
+        k = dhash256(&branch.out());
+    }
+    k
+}
+
 /// Verify Witness v1 (Taproot)
 fn verify_witnessv1_program(
     witness: &ScriptWitness,
@@ -609,6 +659,7 @@ fn verify_witnessv1_program(
                 flags,
                 checker,
                 SignatureVersion::WitnessV0,
+                &execdata,
             )
         }
         // BIP141 P2WPKH: 20-byte witness v0 program (which encodes Hash160(pubkey))
@@ -631,6 +682,7 @@ fn verify_witnessv1_program(
                 flags,
                 checker,
                 SignatureVersion::WitnessV0,
+                &execdata,
             )
         } else {
             Err(Error::WitnessProgramWrongLength)
@@ -639,6 +691,9 @@ fn verify_witnessv1_program(
     // Make sure the version is witnessv1 and 32 bytes long and that it is not p2sh
     // BIP341 Taproot: 32-byte non-P2SH witness v1 program (which encodes a P2C-tweaked pubkey)
     else if witness_version == 1 && witness_program.len() == 32 && !flags.verify_p2sh {
+        if flags.verify_taproot {
+            return Ok(false);
+        }
         if witness_stack_len == 0 {
             return Err(Error::WitnessProgramWitnessEmpty);
         }
@@ -664,8 +719,8 @@ fn verify_witnessv1_program(
             ))
         } else {
             // Script path spending (stack size is >1 after removing optional annex)
-            let control = stack.last().unwrap();
-            let script = &stack[stack.len() - 1];
+            let control = stack.pop()?;
+            let script = stack.pop()?;
 
             if control.len() < 33 || control.len() > 4129 || (control.len() - 33) % 32 != 0 {
                 // taproot control size wrong
@@ -679,6 +734,19 @@ fn verify_witnessv1_program(
         }
         Ok(true)
     }
+}
+
+/// TODO: impl the newest eval_script
+#[cfg_attr(feature = "cargo-clippy", allow(match_same_arms))]
+pub fn eval_schnorr_script(
+    stack: &mut Stack<Bytes>,
+    script: &Script,
+    flags: &VerificationFlags,
+    checker: &dyn SignatureChecker,
+    version: SignatureVersion,
+    execdata: &ScriptExecutionData,
+) -> Result<bool, Error> {
+    todo!()
 }
 
 /// Evaluautes the script
