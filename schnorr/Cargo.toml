@@ -12,6 +12,8 @@ std = [
     "hex/std",
     "sha2/std",
     "light-bitcoin-primitives/std",
+    "light-bitcoin-serialization/std",
+    "light-bitcoin-crypto/std",
     "rand_core/std"
 ]
 getrandom = ["rand_core/getrandom"]
@@ -23,3 +25,5 @@ sha2 = { version = "0.9.5", default-features = false }
 hex = { version = "0.4", default-features = false }
 rand_core = { version = "0.6.3", default-features = false }
 light-bitcoin-primitives = { path = "../primitives", default-features = false }
+light-bitcoin-crypto = { path = "../crypto", default-features = false }
+light-bitcoin-serialization = { path = "../serialization", default-features = false }

@@ -2,11 +2,13 @@
 use alloc::{vec, vec::Vec};
 use light_bitcoin_chain::H256;
 use light_bitcoin_keys::{Message, Public, Signature};
+use light_bitcoin_schnorr::xonly::XOnly;
 use light_bitcoin_serialization::Stream;
 
 use core::{cmp, mem};
 use light_bitcoin_primitives::Bytes;
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use std::str::FromStr;
 
 use crate::script::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STACK_SIZE};
@@ -622,6 +624,19 @@ fn compute_taproot_merkle_Root(control: Bytes, tapleaf_hash: H256) -> H256 {
     k
 }
 
+/// Verify Taproot Commitment
+fn verify_taproot_commitment(control: &[u8], program: &[u8], tapleaf_hash: &H256) -> bool {
+    // For the time being, the subsequent optimization
+    assert!(control.len() >= 33);
+    assert!(program.len() >= 32);
+
+    let p = XOnly::try_from(&control[1..33]).unwrap();
+    let q = XOnly::try_from(program).unwrap();
+    let merkle_root = compute_taproot_merkle_Root(Bytes::from(control), tapleaf_hash.clone());
+    let parity = if (control[0] & 1) > 0u8 { true } else { false };
+    q.check_taptweak(&p, merkle_root, parity)
+}
+
 /// Verify Witness v1 (Taproot)
 fn verify_witnessv1_program(
     witness: &ScriptWitness,
@@ -703,9 +718,17 @@ fn verify_witnessv1_program(
             && witness_stack.last().is_some()
             && witness_program.last() == Some(&ANNEX_TAG)
         {
-            stack.pop()?;
+            let annex = stack.pop()?;
+            let mut stream = Stream::default();
+            stream.append(&annex);
+            let out = stream.out();
+            let annex_hash = dhash256(&out);
+            execdata.m_annex_hash = annex_hash;
+            execdata.m_annex_present = true;
+        } else {
+            execdata.m_annex_present = false;
         };
-
+        execdata.m_annex_init = true;
         if witness_stack_len == 1 {
             // Key path spending (stack size is 1 after removing optional annex)
             let pubkey = stack.pop()?;
@@ -725,6 +748,27 @@ fn verify_witnessv1_program(
             if control.len() < 33 || control.len() > 4129 || (control.len() - 33) % 32 != 0 {
                 // taproot control size wrong
                 return Err(Error::WitnessProgramWrongLength);
+            }
+            execdata.m_tapleaf_hash = compute_tapleaf_hash(control[0] & 0xfe, &script);
+            if !verify_taproot_commitment(&control[..], witness_program, &execdata.m_tapleaf_hash) {
+                return Err(Error::WitnessProgramMismatch);
+            }
+            execdata.m_tapleaf_hash_init = true;
+            if (control[0] & 0xfe) == 0xc0 {
+                // Tapscript (leaf version 0xc0)
+                execdata.m_validation_weight_left = witness_stack_len as i64 + 4 + 50;
+                execdata.m_validation_weight_left_init = true;
+                return execute_witness_script(
+                    &mut stack,
+                    &script.into(),
+                    flags,
+                    checker,
+                    SignatureVersion::WitnessV0,
+                    &execdata,
+                );
+            }
+            if flags.verify_discourage_upgradable_taproot_version {
+                return Err(Error::DiscourageUpgradableTaprootVersion);
             }
             Ok(true)
         }
