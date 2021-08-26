@@ -283,9 +283,8 @@ pub fn signature_aggregation(sigs: Vec<Signature>) -> Signature {
 
 #[cfg(test)]
 mod tests {
-    use core::convert::{TryFrom, TryInto};
-
     use super::*;
+    use core::convert::{TryFrom, TryInto};
 
     /// BIP340 test vectors
     /// https://github.com/bitcoin/bips/blob/master/bip-0340/test-vectors.csv

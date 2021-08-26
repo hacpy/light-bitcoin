@@ -498,40 +498,30 @@ fn execute_witness_script(
     Ok(success)
 }
 
+/// Checked, Tested
 fn compute_tapleaf_hash(leaf_version: u8, script: &Bytes) -> H256 {
     let mut stream = Stream::default();
-    stream.append(&"TapLeaf");
-    stream.append(&"TapLeaf");
+    stream.append(&sha256(b"TapLeaf"));
+    stream.append(&sha256(b"TapLeaf"));
     stream.append(&leaf_version);
     stream.append(script);
     let out = stream.out();
-    dhash256(&out)
+    sha256(&out)
 }
 
-fn compute_taproot_merkle_Root(control: Bytes, tapleaf_hash: H256) -> H256 {
+/// Checked, but no test
+fn compute_taproot_merkle_root(control: Bytes, tapleaf_hash: H256) -> H256 {
+    // TAPROOT_CONTROL_BASE_SIZE == 33, TAPROOT_CONTROL_NODE_SIZE == 32
     let path_len = (control.len() - 33) / 32;
 
     let mut k = tapleaf_hash;
     for i in 0..path_len {
-        let mut node = Bytes::new();
-
         let mut branch = Stream::default();
-        branch.append(&"TapBranch");
-        branch.append(&"TapBranch");
+        branch.append(&sha256(b"TapBranch"));
+        branch.append(&sha256(b"TapBranch"));
 
-        let control_data = control
-            .clone()
-            .take()
-            .iter()
-            .fold(0, |x, &i| x << 4 | i as u64);
-        let begin: Vec<u8> = (control_data + 33 + 32 * i as u64)
-            .to_be_bytes()
-            .iter()
-            .copied()
-            .collect();
-        let end: Vec<u8> = 32u64.to_be_bytes().iter().copied().collect();
-        node.append(&mut Bytes::from(begin));
-        node.append(&mut Bytes::from(end));
+        let p = 33 + 32 * i;
+        let node = Bytes::from(&control[p..p + 32]);
         if node.cmp(&Bytes::from(k.as_bytes())) == Ordering::Less {
             branch.append(&k);
             branch.append(&node);
@@ -539,12 +529,13 @@ fn compute_taproot_merkle_Root(control: Bytes, tapleaf_hash: H256) -> H256 {
             branch.append(&node);
             branch.append(&k);
         }
-        k = dhash256(&branch.out());
+        k = sha256(&branch.out());
     }
     k
 }
 
 /// Verify Taproot Commitment
+/// Checked, but no test
 fn verify_taproot_commitment(control: &[u8], program: &[u8], tapleaf_hash: &H256) -> bool {
     // For the time being, the subsequent optimization
     assert!(control.len() >= 33);
@@ -552,7 +543,7 @@ fn verify_taproot_commitment(control: &[u8], program: &[u8], tapleaf_hash: &H256
 
     let p = XOnly::try_from(&control[1..33]).unwrap();
     let q = XOnly::try_from(program).unwrap();
-    let merkle_root = compute_taproot_merkle_Root(Bytes::from(control), tapleaf_hash.clone());
+    let merkle_root = compute_taproot_merkle_root(Bytes::from(control), tapleaf_hash.clone());
     let parity = if (control[0] & 1) > 0u8 { true } else { false };
     q.check_taptweak(&p, merkle_root, parity)
 }
@@ -642,7 +633,7 @@ fn verify_witnessv1_program(
             let mut stream = Stream::default();
             stream.append(&annex);
             let out = stream.out();
-            let annex_hash = dhash256(&out);
+            let annex_hash = sha256(&out);
             execdata.m_annex_hash = annex_hash;
             execdata.m_annex_present = true;
         } else {
@@ -1492,16 +1483,20 @@ pub fn eval_script(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use light_bitcoin_chain::{
         h256_rev, Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput,
     };
     use light_bitcoin_keys::{KeyPair, Network, Private};
 
     use crate::{
-        interpreter::{verify_script, ScriptExecutionData},
+        interpreter::{compute_taproot_merkle_root, verify_script, ScriptExecutionData},
         Builder, Error, Opcode, Script, ScriptWitness, SignatureVersion, TransactionInputSigner,
         TransactionSignatureChecker, UnsignedTransactionInput, VerificationFlags,
     };
+
+    use super::compute_tapleaf_hash;
 
     // https://blockchain.info/rawtx/3f285f083de7c0acabd9f106a43ec42687ab0bebe2e6f0d529db696794540fea
     #[test]
@@ -1530,6 +1525,39 @@ mod tests {
                 &execdata
             ),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn test_taproot_tree() {
+        let script_a = Script::from_str(
+            "20d37e506f734e1a3006b3bd78b4d3be727adc09f7d15360fd33b42ee1c52510ecac",
+        )
+        .unwrap();
+        let script_b = Script::from_str(
+            "2083fb9c908d1644157867f082f993e2b82af49237440ff23694dbff851f064a9dac",
+        )
+        .unwrap();
+        let script_c = Script::from_str(
+            "20f19a2a4a8f65b960db4c5ee53602448ce2375299606f9f09ee52e339664bdbfbac",
+        )
+        .unwrap();
+
+        let leaf_a = compute_tapleaf_hash(0xc0, &script_a.to_bytes());
+        let leaf_b = compute_tapleaf_hash(0xc0, &script_b.to_bytes());
+        let leaf_c = compute_tapleaf_hash(0xc0, &script_c.to_bytes());
+
+        assert_eq!(
+            hex::encode(leaf_a.as_bytes()),
+            "b6ed0570ded6e05594388f5ce5baf7153dc57c18ff68a11c571d32c240e9ef07"
+        );
+        assert_eq!(
+            hex::encode(leaf_b.as_bytes()),
+            "3b18c359199521270445f2a2e9915f304be2da6ac30bc1fa02683bff579261fd"
+        );
+        assert_eq!(
+            hex::encode(leaf_c.as_bytes()),
+            "43a2c274ee16c7237cdcacd9c15fbb2941e24d8be8cfdbdaee5adbe255d7ba55"
         );
     }
 

@@ -8,13 +8,13 @@
 //! [`libsecp256k1`]: https://github.com/paritytech/libsecp256k1/blob/master/src/lib.rs
 use core::convert::{TryFrom, TryInto};
 
-use light_bitcoin_crypto::dhash256;
+use light_bitcoin_crypto::{dhash256, sha256};
 use light_bitcoin_serialization::Stream;
 use rand_core::{CryptoRng, RngCore};
 use secp256k1::{
     curve::{Affine, Field},
     util::{TAG_PUBKEY_EVEN, TAG_PUBKEY_ODD},
-    Message, PublicKey,
+    Message, PublicKey, SecretKey,
 };
 
 use crate::{error::Error, schnorrsig, signature::Signature, taggedhash::HashInto};
@@ -39,18 +39,26 @@ impl XOnly {
 
     pub fn compute_taptweak_hash(&self, merkle_root: H256) -> H256 {
         let mut steam = Stream::default();
-        steam.append(&"TapTweak");
-        steam.append(&"TapTweak");
+        steam.append(&sha256(b"TapTweak"));
+        steam.append(&sha256(b"TapTweak"));
         steam.append(&H256::from_slice(&self.0[..]));
         steam.append(&merkle_root);
         let out = steam.out();
-        dhash256(&out)
+        sha256(&out)
+    }
+
+    pub fn check_tweak_add(&self, internal: &XOnly, tweak: &H256, _parity: bool) -> bool {
+        let mut pk: PublicKey = internal.clone().try_into().unwrap();
+        let tweak = SecretKey::parse_slice(tweak.as_bytes()).unwrap();
+        pk.tweak_add_assign(&tweak).unwrap();
+        let pkx = XOnly::try_from(pk).unwrap();
+        &pkx == self
     }
 
     // TODO： impl tweak add check
     pub fn check_taptweak(&self, internal: &XOnly, merkle_root: H256, parity: bool) -> bool {
         let tweak = internal.compute_taptweak_hash(merkle_root);
-        true
+        self.check_tweak_add(internal, &tweak, parity)
     }
 
     pub fn on_curve(&self) -> Result<bool, Error> {
