@@ -318,6 +318,8 @@ impl TransactionInputSigner {
         sighash: Sighash,
         execdata: &ScriptExecutionData,
         in_pos: u32,
+        input_amount: u64,
+        script_pubkey: &Script,
     ) -> H256 {
         let key_version = 0u8;
         let ext_flag = if sigversion == SignatureVersion::Taproot {
@@ -326,9 +328,9 @@ impl TransactionInputSigner {
             1u8
         };
 
-        let hash_prevouts = compute_schnorr_hash_prevouts(sighash, &self.inputs);
-        let hash_sequence = compute_schnorr_hash_sequence(sighash, &self.inputs);
-        let hash_outputs = compute_schnorr_hash_outputs(sighash, in_pos as usize, &self.outputs);
+        let hash_prevouts = compute_schnorr_hash_prevouts(&self.inputs);
+        let hash_sequence = compute_schnorr_hash_sequence(&self.inputs);
+        let hash_outputs = compute_schnorr_hash_outputs(in_pos as usize, &self.outputs);
         let hash_amounts = compute_schnorr_hash_amounts(&self.outputs);
         let hash_scripts = compute_schnorr_hash_scripts(&self.outputs);
 
@@ -336,7 +338,7 @@ impl TransactionInputSigner {
         stream.append(&sha256(b"TapSighash"));
         stream.append(&sha256(b"TapSighash"));
         // Epoch
-        stream.append(&1);
+        stream.append(&0u8);
         // Hash type
         let hash_type: u8 = match sighash.base {
             SighashBase::Default => 0x00,
@@ -368,7 +370,8 @@ impl TransactionInputSigner {
         // L1489-1495
         if input_type == 128 {
             stream.append(&self.inputs[in_pos as usize].previous_output);
-            stream.append(&hash_outputs[in_pos as usize]);
+            stream.append_list(&**script_pubkey);
+            stream.append(&input_amount);
             stream.append(&self.inputs[in_pos as usize].sequence);
         } else {
             stream.append(&in_pos);
@@ -385,7 +388,7 @@ impl TransactionInputSigner {
             let mut single_output = Stream::default();
             single_output.append(&self.outputs[in_pos as usize]);
             let output = single_output.out();
-            stream.append(&dhash256(&output));
+            stream.append(&sha256(&output));
         }
 
         // Additional data for BIP 342 signatures
@@ -399,6 +402,7 @@ impl TransactionInputSigner {
             }
         }
         let out = stream.out();
+
         sha256(&out)
     }
 
@@ -479,51 +483,28 @@ fn compute_hash_outputs(
     }
 }
 
-fn compute_schnorr_hash_prevouts(sighash: Sighash, inputs: &[UnsignedTransactionInput]) -> H256 {
-    if sighash.anyone_can_pay {
-        H256::zero()
-    } else {
-        let mut stream = Stream::default();
-        for input in inputs {
-            stream.append(&input.previous_output);
-        }
-        sha256(&stream.out())
+fn compute_schnorr_hash_prevouts(inputs: &[UnsignedTransactionInput]) -> H256 {
+    let mut stream = Stream::default();
+    for input in inputs {
+        stream.append(&input.previous_output);
     }
+    sha256(&stream.out())
 }
 
-fn compute_schnorr_hash_sequence(sighash: Sighash, inputs: &[UnsignedTransactionInput]) -> H256 {
-    match sighash.base {
-        SighashBase::All if !sighash.anyone_can_pay => {
-            let mut stream = Stream::default();
-            for input in inputs {
-                stream.append(&input.sequence);
-            }
-            sha256(&stream.out())
-        }
-        _ => H256::zero(),
+fn compute_schnorr_hash_sequence(inputs: &[UnsignedTransactionInput]) -> H256 {
+    let mut stream = Stream::default();
+    for input in inputs {
+        stream.append(&input.sequence);
     }
+    sha256(&stream.out())
 }
 
-fn compute_schnorr_hash_outputs(
-    sighash: Sighash,
-    input_index: usize,
-    outputs: &[TransactionOutput],
-) -> H256 {
-    match sighash.base {
-        SighashBase::All => {
-            let mut stream = Stream::default();
-            for output in outputs {
-                stream.append(output);
-            }
-            sha256(&stream.out())
-        }
-        SighashBase::Single if input_index < outputs.len() => {
-            let mut stream = Stream::default();
-            stream.append(&outputs[input_index]);
-            sha256(&stream.out())
-        }
-        _ => H256::zero(),
+fn compute_schnorr_hash_outputs(input_index: usize, outputs: &[TransactionOutput]) -> H256 {
+    let mut stream = Stream::default();
+    for output in outputs {
+        stream.append(output);
     }
+    sha256(&stream.out())
 }
 
 fn compute_schnorr_hash_amounts(outputs: &[TransactionOutput]) -> H256 {
@@ -544,8 +525,12 @@ fn compute_schnorr_hash_scripts(outputs: &[TransactionOutput]) -> H256 {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use light_bitcoin_keys::{Address, Private};
     use light_bitcoin_primitives::{h256, h256_rev};
+
+    use crate::interpreter::compute_tapleaf_hash;
 
     use super::*;
 
@@ -605,6 +590,58 @@ mod tests {
             SighashBase::All.into(),
         );
         assert_eq!(hash, expected_signature_hash);
+    }
+
+    #[test]
+    fn test_schnorr_sighash() {
+        let tx = Transaction {
+            version: 2,
+            inputs: vec![TransactionInput {
+                previous_output: OutPoint {
+                    txid: h256("b097b8cac20316246cf3771d8dd417fb5118aa94005bd26974e46114553336e7"),
+                    index: 0,
+                },
+                script_sig: Builder::default().into_bytes(),
+                sequence: 0,
+                script_witness: vec![],
+            }],
+            outputs: vec![TransactionOutput {
+                value: 50000000,
+                script_pubkey: Bytes::from_str("0014711e7a4a65940dcfd9306420c89d01fe9515bd7a")
+                    .unwrap(),
+            }],
+            lock_time: 0,
+        };
+
+        let signer: TransactionInputSigner = tx.into();
+        let sighash = Sighash::new(SighashBase::Default, false, false);
+        let script_a: Script =
+            "2014d3b5bef893446d4a0b0eff5c1d12198daf2977a74ef7f7648e2ccda1177ba1ac"
+                .parse()
+                .unwrap();
+        let mut execdata = ScriptExecutionData::default();
+        execdata.m_tapleaf_hash_init = true;
+        execdata.m_tapleaf_hash = compute_tapleaf_hash(0xc0, &Bytes::from(script_a));
+        execdata.m_codeseparator_pos_init = true;
+        execdata.m_codeseparator_pos = 0;
+
+        let script_pubkey: Script =
+            "512081442df6eda0751b9ba436369f769f3f9f7274097ccfec2fe5df88ffe1766927"
+                .parse()
+                .unwrap();
+        let amount = 100000000;
+        let sighash_a = signer.signature_hash_schnorr(
+            SignatureVersion::TapScript,
+            sighash,
+            &execdata,
+            0,
+            amount,
+            &script_pubkey,
+        );
+        println!("Schnorr Sighash:{:?}", sighash_a);
+        println!(
+            "Schnorr Sighash:0xefa71d261f6d98cc2116e7ca720582de08602a94d2291412bf09122da6236881"
+        );
     }
 
     fn run_test_sighash(tx: &str, script: &str, input_index: usize, hash_type: i32, result: &str) {

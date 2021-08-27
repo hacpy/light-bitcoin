@@ -25,6 +25,7 @@ pub trait SignatureChecker {
         signature: &Signature,
         public: &Public,
         execdata: &ScriptExecutionData,
+        script_code: &Script,
         sighashtype: u32,
         version: SignatureVersion,
     ) -> bool;
@@ -64,6 +65,7 @@ impl SignatureChecker for NoopSignatureChecker {
         _: &Signature,
         _: &Public,
         _: &ScriptExecutionData,
+        _: &Script,
         _: u32,
         _: SignatureVersion,
     ) -> bool {
@@ -116,14 +118,20 @@ impl SignatureChecker for TransactionSignatureChecker {
         signature: &Signature,
         public: &Public,
         execdata: &ScriptExecutionData,
+        script_code: &Script,
         sighashtype: u32,
         version: SignatureVersion,
     ) -> bool {
         let sighash = Sighash::from_u32(version, sighashtype);
 
-        let hash =
-            self.signer
-                .signature_hash_schnorr(version, sighash, execdata, self.input_index as u32);
+        let hash = self.signer.signature_hash_schnorr(
+            version,
+            sighash,
+            execdata,
+            self.input_index as u32,
+            self.input_amount,
+            script_code,
+        );
         self.verify_schnorr_signature(signature, public, &hash)
     }
 

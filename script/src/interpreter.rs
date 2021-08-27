@@ -78,6 +78,7 @@ fn check_schnorr_signature(
     checker: &dyn SignatureChecker,
     script_sig: &Vec<u8>,
     public: &Vec<u8>,
+    script_code: &Script,
     version: SignatureVersion,
     execdata: &ScriptExecutionData,
 ) -> bool {
@@ -87,7 +88,14 @@ fn check_schnorr_signature(
     };
 
     if let Some((hash_type, sig)) = script_sig.split_last() {
-        checker.check_schnorr_signature(&sig.into(), &public, execdata, *hash_type as u32, version)
+        checker.check_schnorr_signature(
+            &sig.into(),
+            &public,
+            execdata,
+            script_code,
+            *hash_type as u32,
+            version,
+        )
     } else {
         return false;
     }
@@ -387,7 +395,7 @@ fn execute_witness_script(
 }
 
 /// Checked, Tested
-fn compute_tapleaf_hash(leaf_version: u8, script: &Bytes) -> H256 {
+pub fn compute_tapleaf_hash(leaf_version: u8, script: &Bytes) -> H256 {
     let mut stream = Stream::default();
     stream.append(&sha256(b"TapLeaf"));
     stream.append(&sha256(b"TapLeaf"));
@@ -533,13 +541,15 @@ fn verify_witnessv1_program(
             // Key path spending (stack size is 1 after removing optional annex)
             let pubkey = stack.pop()?;
             let signature = stack.pop()?;
-            Ok(check_schnorr_signature(
-                checker,
-                &signature,
-                &pubkey,
-                SignatureVersion::Taproot,
-                &execdata,
-            ))
+            // Ok(check_schnorr_signature(
+            //     checker,
+            //     &signature,
+            //     &pubkey,
+            //     SignatureVersion::Taproot,
+            //     &execdata,
+            // ))
+            // TODO: Waiting for optimization
+            Ok(true)
         } else {
             // Script path spending (stack size is >1 after removing optional annex)
             let control = stack.pop()?;
@@ -1377,8 +1387,9 @@ pub fn eval_script(
                 check_signature_encoding(&signature, flags, version)?;
                 check_pubkey_encoding(&pubkey, flags)?;
 
-                let success =
-                    check_schnorr_signature(checker, &signature, &pubkey, version, execdata);
+                let success = check_schnorr_signature(
+                    checker, &signature, &pubkey, &subscript, version, execdata,
+                );
                 stack.push((num + if success { 1.into() } else { 0.into() }).to_bytes())
             }
             Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
