@@ -1323,8 +1323,8 @@ pub fn eval_script(
                             Builder::default().push_data(&*signature).into_script();
                         subscript = subscript.find_and_delete(&*signature_script);
                     }
-                    SignatureVersion::Taproot => todo!(),
-                    SignatureVersion::TapScript => todo!(),
+                    SignatureVersion::Taproot => (),
+                    SignatureVersion::TapScript => (),
                 }
 
                 check_signature_encoding(&signature, flags, version)?;
@@ -1370,8 +1370,8 @@ pub fn eval_script(
                             Builder::default().push_data(&*signature).into_script();
                         subscript = subscript.find_and_delete(&*signature_script);
                     }
-                    SignatureVersion::Taproot => todo!(),
-                    SignatureVersion::TapScript => todo!(),
+                    SignatureVersion::Taproot => (),
+                    SignatureVersion::TapScript => (),
                 }
 
                 check_signature_encoding(&signature, flags, version)?;
@@ -1416,8 +1416,8 @@ pub fn eval_script(
                                 Builder::default().push_data(&*signature).into_script();
                             subscript = subscript.find_and_delete(&*signature_script);
                         }
-                        SignatureVersion::Taproot => todo!(),
-                        SignatureVersion::TapScript => todo!(),
+                        SignatureVersion::Taproot => (),
+                        SignatureVersion::TapScript => (),
                     }
                 }
 
