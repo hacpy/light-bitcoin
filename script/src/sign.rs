@@ -333,8 +333,8 @@ impl TransactionInputSigner {
         let hash_scripts = compute_hash_scripts(&self.outputs);
 
         let mut stream = Stream::default();
-        stream.append(&sha256(b"TapSigHash"));
-        stream.append(&sha256(b"TapSigHash"));
+        stream.append(&sha256(b"TapSighash"));
+        stream.append(&sha256(b"TapSighash"));
         // Epoch
         stream.append(&1);
         // Hash type
