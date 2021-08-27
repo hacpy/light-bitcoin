@@ -326,11 +326,11 @@ impl TransactionInputSigner {
             1u8
         };
 
-        let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
-        let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
-        let hash_outputs = compute_hash_outputs(sighash, in_pos as usize, &self.outputs);
-        let hash_amounts = compute_hash_amounts(&self.outputs);
-        let hash_scripts = compute_hash_scripts(&self.outputs);
+        let hash_prevouts = compute_schnorr_hash_prevouts(sighash, &self.inputs);
+        let hash_sequence = compute_schnorr_hash_sequence(sighash, &self.inputs);
+        let hash_outputs = compute_schnorr_hash_outputs(sighash, in_pos as usize, &self.outputs);
+        let hash_amounts = compute_schnorr_hash_amounts(&self.outputs);
+        let hash_scripts = compute_schnorr_hash_scripts(&self.outputs);
 
         let mut stream = Stream::default();
         stream.append(&sha256(b"TapSighash"));
@@ -479,7 +479,54 @@ fn compute_hash_outputs(
     }
 }
 
-fn compute_hash_amounts(outputs: &[TransactionOutput]) -> H256 {
+fn compute_schnorr_hash_prevouts(sighash: Sighash, inputs: &[UnsignedTransactionInput]) -> H256 {
+    if sighash.anyone_can_pay {
+        H256::zero()
+    } else {
+        let mut stream = Stream::default();
+        for input in inputs {
+            stream.append(&input.previous_output);
+        }
+        sha256(&stream.out())
+    }
+}
+
+fn compute_schnorr_hash_sequence(sighash: Sighash, inputs: &[UnsignedTransactionInput]) -> H256 {
+    match sighash.base {
+        SighashBase::All if !sighash.anyone_can_pay => {
+            let mut stream = Stream::default();
+            for input in inputs {
+                stream.append(&input.sequence);
+            }
+            sha256(&stream.out())
+        }
+        _ => H256::zero(),
+    }
+}
+
+fn compute_schnorr_hash_outputs(
+    sighash: Sighash,
+    input_index: usize,
+    outputs: &[TransactionOutput],
+) -> H256 {
+    match sighash.base {
+        SighashBase::All => {
+            let mut stream = Stream::default();
+            for output in outputs {
+                stream.append(output);
+            }
+            sha256(&stream.out())
+        }
+        SighashBase::Single if input_index < outputs.len() => {
+            let mut stream = Stream::default();
+            stream.append(&outputs[input_index]);
+            sha256(&stream.out())
+        }
+        _ => H256::zero(),
+    }
+}
+
+fn compute_schnorr_hash_amounts(outputs: &[TransactionOutput]) -> H256 {
     let mut stream = Stream::default();
     for output in outputs {
         stream.append(&output.value);
@@ -487,7 +534,7 @@ fn compute_hash_amounts(outputs: &[TransactionOutput]) -> H256 {
     dhash256(&stream.out())
 }
 
-fn compute_hash_scripts(outputs: &[TransactionOutput]) -> H256 {
+fn compute_schnorr_hash_scripts(outputs: &[TransactionOutput]) -> H256 {
     let mut stream = Stream::default();
     for output in outputs {
         stream.append(&output.script_pubkey);
