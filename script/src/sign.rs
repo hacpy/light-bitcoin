@@ -4,7 +4,7 @@
 use alloc::{vec, vec::Vec};
 
 use light_bitcoin_chain::{OutPoint, Transaction, TransactionInput, TransactionOutput};
-use light_bitcoin_crypto::dhash256;
+use light_bitcoin_crypto::{dhash256, sha256};
 use light_bitcoin_keys::KeyPair;
 use light_bitcoin_primitives::{Bytes, H256};
 use light_bitcoin_serialization::Stream;
@@ -333,8 +333,8 @@ impl TransactionInputSigner {
         let hash_scripts = compute_hash_scripts(&self.outputs);
 
         let mut stream = Stream::default();
-        stream.append(&"TapSigHash");
-        stream.append(&"TapSigHash");
+        stream.append(&sha256(b"TapSigHash"));
+        stream.append(&sha256(b"TapSigHash"));
         // Epoch
         stream.append(&1);
         // Hash type
@@ -399,7 +399,7 @@ impl TransactionInputSigner {
             }
         }
         let out = stream.out();
-        dhash256(&out)
+        sha256(&out)
     }
 
     fn signature_hash_fork_id(
