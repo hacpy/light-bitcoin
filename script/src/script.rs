@@ -419,7 +419,7 @@ impl Script {
         }
     }
 
-    pub fn sigops_count(&self, checkdatasig_active: bool, serialized_script: bool) -> usize {
+    pub fn sigops_count(&self, _checkdatasig_active: bool, serialized_script: bool) -> usize {
         let mut last_opcode = Opcode::OP_0;
         let mut total = 0;
         for opcode in self.opcodes() {

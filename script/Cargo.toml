@@ -16,6 +16,7 @@ std = [
   "light-bitcoin-primitives/std",
   "light-bitcoin-serialization/std",
   "light-bitcoin-schnorr/std",
+  "sha2/std"
 ]
 
 [dependencies]
@@ -27,3 +28,4 @@ light-bitcoin-keys = { path = "../keys", default-features = false }
 light-bitcoin-primitives = { path = "../primitives", default-features = false }
 light-bitcoin-serialization = { path = "../serialization", default-features = false }
 light-bitcoin-schnorr = { path = "../schnorr", default-features = false }
+sha2 = { version = "0.9.5", default-features = false }

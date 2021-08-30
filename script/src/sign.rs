@@ -335,6 +335,7 @@ impl TransactionInputSigner {
         let hash_scripts = compute_schnorr_hash_scripts(&self.outputs);
 
         let mut stream = Stream::default();
+
         stream.append(&sha256(b"TapSighash"));
         stream.append(&sha256(b"TapSighash"));
         // Epoch
@@ -365,7 +366,7 @@ impl TransactionInputSigner {
         }
 
         let have_annex = if execdata.m_annex_present { 1u8 } else { 0u8 };
-        let spend_type = ext_flag << 1 + have_annex;
+        let spend_type = (ext_flag << 1) + have_annex;
         stream.append(&spend_type);
         // L1489-1495
         if input_type == 128 {
@@ -499,7 +500,7 @@ fn compute_schnorr_hash_sequence(inputs: &[UnsignedTransactionInput]) -> H256 {
     sha256(&stream.out())
 }
 
-fn compute_schnorr_hash_outputs(input_index: usize, outputs: &[TransactionOutput]) -> H256 {
+fn compute_schnorr_hash_outputs(_input_index: usize, outputs: &[TransactionOutput]) -> H256 {
     let mut stream = Stream::default();
     for output in outputs {
         stream.append(output);
@@ -512,7 +513,7 @@ fn compute_schnorr_hash_amounts(outputs: &[TransactionOutput]) -> H256 {
     for output in outputs {
         stream.append(&output.value);
     }
-    dhash256(&stream.out())
+    sha256(&stream.out())
 }
 
 fn compute_schnorr_hash_scripts(outputs: &[TransactionOutput]) -> H256 {
@@ -520,7 +521,7 @@ fn compute_schnorr_hash_scripts(outputs: &[TransactionOutput]) -> H256 {
     for output in outputs {
         stream.append(&output.script_pubkey);
     }
-    dhash256(&stream.out())
+    sha256(&stream.out())
 }
 
 #[cfg(test)]
@@ -594,11 +595,11 @@ mod tests {
 
     #[test]
     fn test_schnorr_sighash() {
-        let tx = Transaction {
+        let _spend_tx = Transaction {
             version: 2,
             inputs: vec![TransactionInput {
                 previous_output: OutPoint {
-                    txid: h256("b097b8cac20316246cf3771d8dd417fb5118aa94005bd26974e46114553336e7"),
+                    txid: h256("64dbca44cf2a71e150b8fada310f3ba4befcb25309f9f67e7f7e7004dfd4774a"),
                     index: 0,
                 },
                 script_sig: Builder::default().into_bytes(),
@@ -613,17 +614,49 @@ mod tests {
             lock_time: 0,
         };
 
+        let tx = Transaction {
+            version: 2,
+            inputs: vec![TransactionInput {
+                previous_output: OutPoint {
+                    txid: h256("e2b25af0fbfd7ba9c0cfec32a42201e3998441a5bb0eb3c87306b4af72c771fe"),
+                    index: 0,
+                },
+                script_sig: Builder::default().into_bytes(),
+                sequence: 4294967295,
+                script_witness: vec![
+                    Bytes::from_str(
+                        "304402204459860196776aa93daa862da823c3ce197978329369f3a8d325266bb49b959102204845178f3e2419d2e01530d1ea69ab52dc8d1d05aff138a5ef3bc8585a94e27401",
+                    )
+                    .unwrap(),
+                    Bytes::from_str(
+                        "03d3af4e30b126296ada126f6f56d3af70e137f137ed833d65f3f14297136cf58b",
+                    )
+                    .unwrap(),
+                ],
+            }],
+            outputs: vec![TransactionOutput {
+                value: 100000000,
+                script_pubkey: Bytes::from_str(
+                    "5120d7c866a9f82bcb76ba8d00fdffe39c4843f26c362764dd7e8b21b4939560cb44",
+                )
+                .unwrap(),
+            }],
+            lock_time: 0,
+        };
+
         let signer: TransactionInputSigner = tx.into();
         let sighash = Sighash::new(SighashBase::Default, false, false);
         let script_a: Script =
             "2014d3b5bef893446d4a0b0eff5c1d12198daf2977a74ef7f7648e2ccda1177ba1ac"
                 .parse()
                 .unwrap();
-        let mut execdata = ScriptExecutionData::default();
-        execdata.m_tapleaf_hash_init = true;
-        execdata.m_tapleaf_hash = compute_tapleaf_hash(0xc0, &Bytes::from(script_a));
-        execdata.m_codeseparator_pos_init = true;
-        execdata.m_codeseparator_pos = 0;
+        let execdata = ScriptExecutionData {
+            m_tapleaf_hash_init: true,
+            m_tapleaf_hash: compute_tapleaf_hash(0xc0, &Bytes::from(script_a)),
+            m_codeseparator_pos_init: true,
+            m_codeseparator_pos: 0,
+            ..Default::default()
+        };
 
         let script_pubkey: Script =
             "512081442df6eda0751b9ba436369f769f3f9f7274097ccfec2fe5df88ffe1766927"

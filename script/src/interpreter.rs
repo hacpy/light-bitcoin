@@ -1,5 +1,6 @@
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
+
 use light_bitcoin_chain::H256;
 use light_bitcoin_keys::{Message, Public, Signature};
 use light_bitcoin_schnorr::xonly::XOnly;
@@ -539,9 +540,9 @@ fn verify_witnessv1_program(
         execdata.m_annex_init = true;
         if witness_stack_len == 1 {
             // Key path spending (stack size is 1 after removing optional annex)
-            let pubkey = stack.pop()?;
-            let signature = stack.pop()?;
-            // Ok(check_schnorr_signature(
+            // let pubkey = stack.pop()?;
+            // let signature = stack.pop()?;
+            // // Ok(check_schnorr_signature(
             //     checker,
             //     &signature,
             //     &pubkey,
@@ -710,7 +711,7 @@ pub fn verify_script(
 }
 
 /// Evaluautes the script
-#[cfg_attr(feature = "cargo-clippy", allow(match_same_arms))]
+#[cfg_attr(feature = "cargo-clippy", allow(clippy::match_same_arms))]
 pub fn eval_script(
     stack: &mut Stack<Bytes>,
     script: &Script,

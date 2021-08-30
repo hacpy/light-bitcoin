@@ -8,7 +8,7 @@
 //! [`libsecp256k1`]: https://github.com/paritytech/libsecp256k1/blob/master/src/lib.rs
 use core::convert::{TryFrom, TryInto};
 
-use light_bitcoin_crypto::{dhash256, sha256};
+use light_bitcoin_crypto::sha256;
 use light_bitcoin_serialization::Stream;
 use rand_core::{CryptoRng, RngCore};
 use secp256k1::{
@@ -48,7 +48,7 @@ impl XOnly {
     }
 
     pub fn check_tweak_add(&self, internal: &XOnly, tweak: &H256, _parity: bool) -> bool {
-        let mut pk: PublicKey = internal.clone().try_into().unwrap();
+        let mut pk: PublicKey = (*internal).try_into().unwrap();
         let tweak = SecretKey::parse_slice(tweak.as_bytes()).unwrap();
         pk.tweak_add_assign(&tweak).unwrap();
         let pkx = XOnly::try_from(pk).unwrap();
