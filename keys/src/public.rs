@@ -3,10 +3,11 @@ use core::{
     fmt, ops,
 };
 
-use light_bitcoin_crypto::dhash160;
-use light_bitcoin_primitives::{H264, H512, H520};
+use light_bitcoin_crypto::{dhash160, sha256};
+use light_bitcoin_primitives::{H256, H264, H512, H520};
 
 use codec::{Decode, Encode};
+use light_bitcoin_serialization::Stream;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +155,32 @@ impl XOnly {
         }
     }
 
+    pub fn compute_taptweak_hash(&self, merkle_root: H256) -> H256 {
+        let mut steam = Stream::default();
+        steam.append(&sha256(b"TapTweak"));
+        steam.append(&sha256(b"TapTweak"));
+        steam.append(&H256::from_slice(&self.0[..]));
+        steam.append(&merkle_root);
+        let out = steam.out();
+        sha256(&out)
+    }
+
+    pub fn tweak_add(&self, tweak: &H256) -> Result<Self, Error> {
+        let mut pk: secp256k1::PublicKey = (*self).try_into()?;
+        let tweak = secp256k1::SecretKey::parse_slice(tweak.as_bytes())?;
+        // P + tweak * G
+        // check order of secp256k1 and add
+        pk.tweak_add_assign(&tweak)?;
+        let pkx = XOnly::try_from(pk)?;
+        Ok(pkx)
+    }
+
+    pub fn compute_taptweak(&self, merkle_root: H256) -> Result<Self, Error> {
+        // hashTapTweak(P || root)
+        let tweak = self.compute_taptweak_hash(merkle_root);
+        self.tweak_add(&tweak)
+    }
+
     pub fn verify(&self, message: &Message, signature: [u8; 64]) -> Result<bool, Error> {
         let signature = SchnorrSignature::try_from(signature)?;
 
@@ -277,4 +304,27 @@ fn test_serde_public() {
     );
     let de = serde_json::from_str::<Test>(&ser).unwrap();
     assert_eq!(de, pubkey);
+}
+
+#[test]
+fn test_tweak_add() {
+    // The tool to generate the data comes from [`taproot-workshop`]: https://github.com/bitcoinops/taproot-workshop
+    let internal: XOnly = "e63828782c25fc17221a84ec4ae5b11a37f6e2e6b11826d4513d5d3045f81cae"
+        .try_into()
+        .unwrap();
+
+    let tweak =
+        secp256k1::SecretKey::parse_slice(
+            &hex::decode("f187e01d0ce01f7846017f91bfe0875efb0f6390bb0db16e4ea6bfcff5d840dc")
+                .unwrap()[..],
+        )
+        .unwrap();
+    let mut pk: secp256k1::PublicKey = internal.try_into().unwrap();
+
+    pk.tweak_add_assign(&tweak).unwrap();
+    let pkx = XOnly::try_from(pk).unwrap();
+    assert_eq!(
+        hex::encode(pkx.0),
+        "5d043b42f9e92f0e276acdf88dd24f7a47aa54f81221dfc5de1ebc1e793a0f99"
+    );
 }
