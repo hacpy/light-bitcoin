@@ -420,11 +420,11 @@ fn compute_taproot_merkle_root(control: Bytes, tapleaf_hash: H256) -> H256 {
         let p = 33 + 32 * i;
         let node = Bytes::from(&control[p..p + 32]);
         if node.cmp(&Bytes::from(k.as_bytes())) == Ordering::Less {
-            branch.append(&k);
             branch.append(&node);
+            branch.append(&k);
         } else {
-            branch.append(&node);
             branch.append(&k);
+            branch.append(&node);
         }
         k = sha256(&branch.out());
     }
