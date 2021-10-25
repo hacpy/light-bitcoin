@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 
 use light_bitcoin_chain::H256;
 use light_bitcoin_keys::{Message, Public, Signature};
-use light_bitcoin_schnorr::xonly::XOnly;
+
 use light_bitcoin_serialization::Stream;
 
 use core::cmp::Ordering;
