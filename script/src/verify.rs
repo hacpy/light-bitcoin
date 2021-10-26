@@ -2,7 +2,7 @@ use light_bitcoin_chain::constants::{
     LOCKTIME_THRESHOLD, SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK,
     SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
-use light_bitcoin_keys::{Message, Public, Signature};
+use light_bitcoin_keys::{Message, Public, SchnorrSignature, Signature};
 
 use crate::interpreter::ScriptExecutionData;
 use crate::num::Num;
@@ -15,14 +15,14 @@ pub trait SignatureChecker {
 
     fn verify_schnorr_signature(
         &self,
-        signature: &Signature,
+        signature: &SchnorrSignature,
         public: &Public,
         hash: &Message,
     ) -> bool;
 
     fn check_schnorr_signature(
         &self,
-        signature: &Signature,
+        signature: &SchnorrSignature,
         public: &Public,
         execdata: &ScriptExecutionData,
         script_code: &Script,
@@ -53,16 +53,18 @@ impl SignatureChecker for NoopSignatureChecker {
 
     fn verify_schnorr_signature(
         &self,
-        signature: &Signature,
+        signature: &SchnorrSignature,
         public: &Public,
         hash: &Message,
     ) -> bool {
-        public.verify_schnorr(hash, signature).unwrap_or(false)
+        public
+            .verify_schnorr(hash, signature.into())
+            .unwrap_or(false)
     }
 
     fn check_schnorr_signature(
         &self,
-        _: &Signature,
+        _: &SchnorrSignature,
         _: &Public,
         _: &ScriptExecutionData,
         _: &Script,
@@ -106,16 +108,18 @@ impl SignatureChecker for TransactionSignatureChecker {
 
     fn verify_schnorr_signature(
         &self,
-        signature: &Signature,
+        signature: &SchnorrSignature,
         public: &Public,
         hash: &Message,
     ) -> bool {
-        public.verify_schnorr(hash, signature).unwrap_or(false)
+        public
+            .verify_schnorr(hash, signature.into())
+            .unwrap_or(false)
     }
 
     fn check_schnorr_signature(
         &self,
-        signature: &Signature,
+        signature: &SchnorrSignature,
         public: &Public,
         execdata: &ScriptExecutionData,
         script_code: &Script,
@@ -132,7 +136,7 @@ impl SignatureChecker for TransactionSignatureChecker {
             self.input_amount,
             script_code,
         );
-        self.verify_schnorr_signature(signature, public, &hash)
+        self.verify_schnorr_signature(signature.into(), public, &hash)
     }
 
     fn check_signature(

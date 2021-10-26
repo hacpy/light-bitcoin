@@ -2,13 +2,15 @@
 use alloc::{vec, vec::Vec};
 
 use light_bitcoin_chain::H256;
-use light_bitcoin_keys::{Message, Public, Signature};
+use light_bitcoin_keys::{Message, Public, Signature, XOnly};
 
 use light_bitcoin_serialization::Stream;
 
-use core::cmp::Ordering;
-use core::convert::TryFrom;
-use core::{cmp, mem};
+use core::{
+    cmp::{self, Ordering},
+    convert::TryFrom,
+    mem,
+};
 use light_bitcoin_primitives::Bytes;
 
 use crate::script::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STACK_SIZE};

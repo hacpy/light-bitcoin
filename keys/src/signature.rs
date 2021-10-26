@@ -142,6 +142,15 @@ pub struct SchnorrSignature {
     pub s: Scalar,
 }
 
+impl Into<[u8; 64]> for SchnorrSignature {
+    fn into(self) -> [u8; 64] {
+        let mut bytes = [0u8; 64];
+        bytes[..32].copy_from_slice(&self.rx.0);
+        bytes[32..].copy_from_slice(&self.s.b32());
+        bytes
+    }
+}
+
 impl TryFrom<&str> for SchnorrSignature {
     type Error = Error;
 

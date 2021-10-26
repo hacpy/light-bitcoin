@@ -3,10 +3,11 @@ use core::{
     fmt, ops,
 };
 
-use light_bitcoin_crypto::dhash160;
-use light_bitcoin_primitives::{H264, H512, H520};
+use light_bitcoin_crypto::{dhash160, dhash256};
+use light_bitcoin_primitives::{H256, H264, H512, H520};
 
 use codec::{Decode, Encode};
+use light_bitcoin_serialization::Stream;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
@@ -158,6 +159,22 @@ impl XOnly {
         let signature = SchnorrSignature::try_from(signature)?;
 
         verify_schnorr(&signature, message, *self)
+    }
+    
+    pub fn compute_taptweak_hash(&self, merkle_root: H256) -> H256 {
+        let mut steam = Stream::default();
+        steam.append(&"TapTweak");
+        steam.append(&"TapTweak");
+        steam.append(&H256::from_slice(&self.0[..]));
+        steam.append(&merkle_root);
+        let out = steam.out();
+        dhash256(&out)
+    }
+
+    // TODO： impl tweak add check
+    pub fn check_taptweak(&self, internal: &XOnly, merkle_root: H256, parity: bool) -> bool {
+        let tweak = internal.compute_taptweak_hash(merkle_root);
+        true
     }
 }
 
